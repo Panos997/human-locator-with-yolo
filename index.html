@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>People Counter</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f; --surface: #13131a; --border: rgba(255,255,255,0.08);
+    --accent: #7c6ff7; --accent-glow: rgba(124,111,247,0.25);
+    --green: #34d399; --green-dim: rgba(52,211,153,0.15);
+    --text: #f0f0f5; --muted: #8888a0;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 10px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; z-index: 10; }
+  .brand { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .brand span { color: var(--accent); }
+  .pill { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); letter-spacing: 0.3px; text-transform: uppercase; }
+  .pill.running { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .pill.loading-pill { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+  .pill.error-pill { border-color: #e24b4a; color: #f09595; background: #3a1010; }
+  #viewport { position: relative; flex: 1; background: #000; overflow: hidden; }
+  #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--bg); gap: 20px; z-index: 5; padding: 32px; }
+  .icon-ring { width: 88px; height: 88px; border-radius: 50%; background: var(--accent-glow); border: 1px solid var(--accent); display: flex; align-items: center; justify-content: center; }
+  .icon-ring svg { width: 40px; height: 40px; stroke: var(--accent); stroke-width: 1.5; fill: none; }
+  .screen h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; text-align: center; line-height: 1.2; }
+  .screen h1 em { font-style: normal; color: var(--accent); }
+  .screen p { font-size: 14px; color: var(--muted); text-align: center; max-width: 280px; line-height: 1.6; }
+  #btn-start { margin-top: 8px; padding: 15px 40px; border-radius: 50px; border: none; background: var(--accent); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.1s, opacity 0.1s; }
+  #btn-start:active { transform: scale(0.97); opacity: 0.9; }
+  .note { font-size: 11px; color: var(--muted); text-align: center; max-width: 260px; line-height: 1.5; }
+  .spinner { width: 48px; height: 48px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-msg { font-size: 15px; font-weight: 500; color: var(--text); text-align: center; }
+  #loading-sub { font-size: 12px; color: var(--muted); text-align: center; max-width: 260px; line-height: 1.6; }
+  #progress-wrap { width: 220px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  #progress-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+  #stats-bar { display: none; flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 12px 18px; z-index: 10; }
+  .stats-row { display: flex; gap: 12px; }
+  .stat-card { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  .stat-value { font-size: 28px; font-weight: 700; letter-spacing: -1px; line-height: 1; color: var(--text); }
+  .stat-card.peak .stat-value { color: var(--accent); }
+  .stat-card.current .stat-value { color: var(--green); }
+  #btn-reset { margin-top: 10px; width: 100%; padding: 11px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background 0.15s, color 0.15s; }
+  #btn-reset:active { background: var(--border); color: var(--text); }
+  #error-toast { display: none; position: absolute; bottom: 24px; left: 16px; right: 16px; background: #3a1010; border: 1px solid #e24b4a; color: #f09595; font-size: 12px; padding: 12px 16px; border-radius: 10px; text-align: center; z-index: 20; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">People<span>Counter</span></div>
+    <div class="pill" id="status-pill">Ready</div>
+  </header>
+  <div id="viewport">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="screen" id="start-screen">
+      <div class="icon-ring">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+      </div>
+      <h1>Real-time<br><em>People Counter</em></h1>
+      <p>Uses YOLOv8 AI to detect people through your camera. Runs 100% on your device.</p>
+      <button id="btn-start">Open Camera</button>
+      <p class="note">Camera permission required. AI model (~30 MB) downloads once and is cached.</p>
+    </div>
+    <div class="screen" id="loading-screen" style="display:none;">
+      <div class="spinner"></div>
+      <div id="loading-msg">Starting camera...</div>
+      <div id="progress-wrap" style="display:none;"><div id="progress-bar"></div></div>
+      <div id="loading-sub"></div>
+    </div>
+    <div id="error-toast"></div>
+  </div>
+  <div id="stats-bar">
+    <div class="stats-row">
+      <div class="stat-card current">
+        <div class="stat-label">Now in frame</div>
+        <div class="stat-value" id="count-now">0</div>
+      </div>
+      <div class="stat-card peak">
+        <div class="stat-label">Peak (session)</div>
+        <div class="stat-value" id="count-peak">0</div>
+      </div>
+    </div>
+    <button id="btn-reset">Reset peak counter</button>
+  </div>
+</div>
+
+<script type="module">
+// Using @huggingface/transformers v3 with a well-tested COCO model
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3/dist/transformers.min.js';
+
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+
+const video        = document.getElementById('video');
+const canvas       = document.getElementById('canvas');
+const ctx          = canvas.getContext('2d');
+const startScreen  = document.getElementById('start-screen');
+const loadingScreen= document.getElementById('loading-screen');
+const loadingMsg   = document.getElementById('loading-msg');
+const loadingSub   = document.getElementById('loading-sub');
+const progressWrap = document.getElementById('progress-wrap');
+const progressBar  = document.getElementById('progress-bar');
+const statsBar     = document.getElementById('stats-bar');
+const statusPill   = document.getElementById('status-pill');
+const countNow     = document.getElementById('count-now');
+const countPeak    = document.getElementById('count-peak');
+const errorToast   = document.getElementById('error-toast');
+const btnStart     = document.getElementById('btn-start');
+const btnReset     = document.getElementById('btn-reset');
+
+let detector = null;
+let peakCount = 0;
+let isRunning = false;
+
+function showError(msg) {
+  errorToast.textContent = msg;
+  errorToast.style.display = 'block';
+  setTimeout(() => errorToast.style.display = 'none', 10000);
+}
+function setPill(text, cls) {
+  statusPill.textContent = text;
+  statusPill.className = 'pill ' + (cls || '');
+}
+function setLoading(msg, sub) {
+  loadingMsg.textContent = msg;
+  loadingSub.textContent = sub || '';
+}
+
+btnStart.addEventListener('click', async () => {
+  startScreen.style.display = 'none';
+  loadingScreen.style.display = 'flex';
+  setLoading('Starting camera...', 'Please allow camera access when prompted');
+
+  // 1. Camera
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.addEventListener('loadedmetadata', r, { once: true }));
+    await video.play();
+  } catch (e) {
+    loadingScreen.style.display = 'none';
+    startScreen.style.display = 'flex';
+    showError('Camera access denied. Please allow permission and try again.');
+    return;
+  }
+
+  // 2. Load model
+  setLoading('Loading AI model...', 'Downloading ~30 MB on first visit — cached after that');
+  progressWrap.style.display = 'block';
+  setPill('Loading...', 'loading-pill');
+
+  // Try models in order — first one that works wins
+  const MODELS = [
+    'Xenova/yolov8n',
+    'hustvl/yolos-tiny',
+    'Xenova/detr-resnet-50',
+  ];
+
+  let loaded = false;
+  for (const modelName of MODELS) {
+    try {
+      setLoading('Loading AI model...', 'Trying ' + modelName + '...');
+      detector = await pipeline('object-detection', modelName, {
+        progress_callback: (p) => {
+          if (p.status === 'progress' && p.progress) {
+            const pct = Math.round(p.progress);
+            progressBar.style.width = pct + '%';
+            const fname = p.file ? p.file.split('/').pop() : '';
+            loadingSub.textContent = fname ? fname + ' — ' + pct + '%' : 'Loading ' + pct + '%';
+          }
+        }
+      });
+      loaded = true;
+      console.log('Loaded model:', modelName);
+      break;
+    } catch (e) {
+      console.warn('Model failed:', modelName, e.message);
+    }
+  }
+
+  if (!loaded) {
+    loadingScreen.style.display = 'none';
+    startScreen.style.display = 'flex';
+    setPill('Error', 'error-pill');
+    showError('Could not load any AI model. Make sure you have a stable internet connection and try again.');
+    return;
+  }
+
+  loadingScreen.style.display = 'none';
+  statsBar.style.display = 'block';
+  setPill('Running', 'running');
+  isRunning = true;
+  detectLoop();
+});
+
+btnReset.addEventListener('click', () => {
+  peakCount = 0;
+  countPeak.textContent = '0';
+});
+
+// Detection loop — runs inference every 300ms to avoid overloading phone CPU
+let lastDetect = 0;
+const INTERVAL = 300;
+
+async function detectLoop() {
+  if (!isRunning) return;
+
+  const now = performance.now();
+  if (now - lastDetect > INTERVAL && video.readyState >= 2) {
+    lastDetect = now;
+    try {
+      // Use a smaller image for faster inference on mobile
+      const W = 416, H = 416;
+      const off = new OffscreenCanvas(W, H);
+      const offCtx = off.getContext('2d');
+      offCtx.drawImage(video, 0, 0, W, H);
+      const blob = await off.convertToBlob({ type: 'image/jpeg', quality: 0.75 });
+      const url = URL.createObjectURL(blob);
+
+      const results = await detector(url, { threshold: 0.4 });
+      URL.revokeObjectURL(url);
+
+      // Filter people only
+      const people = results.filter(r =>
+        r.label === 'person' || r.label === 'PERSON'
+      );
+
+      drawBoxes(people);
+
+      const count = people.length;
+      countNow.textContent = count;
+      if (count > peakCount) {
+        peakCount = count;
+        countPeak.textContent = peakCount;
+      }
+    } catch (e) {
+      console.warn('Detection error:', e);
+    }
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+function drawBoxes(detections) {
+  const rect = video.getBoundingClientRect();
+  canvas.width  = rect.width;
+  canvas.height = rect.height;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (const det of detections) {
+    const { xmin, ymin, xmax, ymax } = det.box;
+    // boxes are in 0-1 range for some models, pixel range for others
+    const isNorm = xmax <= 1.01;
+    const x  = (isNorm ? xmin * rect.width  : xmin / 416 * rect.width);
+    const y  = (isNorm ? ymin * rect.height : ymin / 416 * rect.height);
+    const w  = (isNorm ? (xmax - xmin) * rect.width  : (xmax - xmin) / 416 * rect.width);
+    const h  = (isNorm ? (ymax - ymin) * rect.height : (ymax - ymin) / 416 * rect.height);
+
+    // Box
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Corner accents
+    const cs = Math.min(w, h) * 0.15;
+    ctx.lineWidth = 3;
+    [[x, y, 1, 1], [x+w, y, -1, 1], [x, y+h, 1, -1], [x+w, y+h, -1, -1]].forEach(([cx, cy, dx, dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * cs, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + dy * cs);
+      ctx.stroke();
+    });
+
+    // Label
+    const label = Math.round(det.score * 100) + '%';
+    ctx.font = 'bold 12px -apple-system, sans-serif';
+    const tw = ctx.measureText(label).width;
+    const ly = y > 22 ? y - 6 : y + h + 16;
+    ctx.fillStyle = '#34d399';
+    ctx.fillRect(x - 1, ly - 14, tw + 10, 17);
+    ctx.fillStyle = '#000';
+    ctx.fillText(label, x + 4, ly);
+  }
+}
+</script>
+</body>
+</html>
