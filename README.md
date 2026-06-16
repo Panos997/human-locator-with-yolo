@@ -14,7 +14,7 @@ Everything runs **directly on the device** — no server, no uploads, no privacy
 - 📦 **Bounding boxes** — green corner markers drawn around each detected person
 - 🔒 **100% private** — camera feed never leaves your device
 - 📱 **Mobile-first** — works on any modern phone browser (Chrome / Safari)
-- ⚡ **No server needed** — pure HTML + JS, hosted on GitHub Pages for free
+- ⚡ **No server needed** — pure HTML + JS, hosted on GitHub Pages
 
 ---
 
